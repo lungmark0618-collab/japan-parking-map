@@ -57,6 +57,23 @@ html, body, [class*="css"]  {
 
 st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 20px;'>🗾 日本找車位</h2>", unsafe_allow_html=True)
 
+# --- 共用搜尋邏輯 ---
+def perform_search(query):
+    try:
+        url = f"https://nominatim.openstreetmap.org/search?format=json&q={urllib.parse.quote(query)}"
+        response = requests.get(url, headers={'User-Agent': 'JapanParkingFinder/1.0'})
+        data = response.json()
+        if data:
+            st.session_state.map_center = [float(data[0]['lat']), float(data[0]['lon'])]
+            st.session_state.map_zoom = 16
+            st.session_state.status_text = f"找到「{query}」！"
+            st.session_state.last_bounds = None # 重設邊界強制重新抓取
+            st.rerun()
+        else:
+            st.session_state.status_text = "找不到這個地點，請試試看其他關鍵字。"
+    except Exception as e:
+        st.session_state.status_text = "搜尋失敗，請確認網路連線。"
+
 # 搜尋列區塊
 st.markdown("<div class='search-container'>", unsafe_allow_html=True)
 col1, col2 = st.columns([4, 1], gap="small")
@@ -65,21 +82,16 @@ with col1:
 with col2:
     if st.button("🔍 搜尋", use_container_width=True):
         if search_query:
-            try:
-                # 呼叫 Nominatim API 搜尋經緯度
-                url = f"https://nominatim.openstreetmap.org/search?format=json&q={urllib.parse.quote(search_query)}"
-                response = requests.get(url, headers={'User-Agent': 'JapanParkingFinder/1.0'})
-                data = response.json()
-                if data:
-                    st.session_state.map_center = [float(data[0]['lat']), float(data[0]['lon'])]
-                    st.session_state.map_zoom = 16
-                    st.session_state.status_text = f"找到「{search_query}」！"
-                    st.session_state.last_bounds = None # 重設邊界強制重新抓取
-                    st.rerun()
-                else:
-                    st.session_state.status_text = "找不到這個地點，請試試看其他關鍵字。"
-            except Exception as e:
-                st.session_state.status_text = "搜尋失敗，請確認網路連線。"
+            perform_search(search_query)
+
+# 熱門推薦搜尋標籤
+st.markdown("<div style='font-size: 0.85rem; color: #94a3b8; margin-bottom: 8px;'>✨ 熱門推薦搜尋：</div>", unsafe_allow_html=True)
+sc1, sc2, sc3, sc4 = st.columns(4)
+hot_spots = ["清水寺", "心齋橋", "黑門市場", "環球影城"]
+for col, spot in zip([sc1, sc2, sc3, sc4], hot_spots):
+    with col:
+        if st.button(spot, use_container_width=True, key=f"hot_{spot}"):
+            perform_search(spot)
 st.markdown("</div>", unsafe_allow_html=True)
 
 # 建立 Folium 地圖物件
@@ -185,7 +197,8 @@ if map_data and map_data.get("bounds"):
                 out center;
             """
             
-            url = f"https://overpass-api.de/api/interpreter?data={urllib.parse.quote(query)}"
+            # 改用 kumi.systems 節點，對亞洲連線較穩定且較少被限流
+            url = f"https://overpass.kumi.systems/api/interpreter?data={urllib.parse.quote(query)}"
             try:
                 response = requests.get(url, timeout=10)
                 data = response.json()
@@ -210,4 +223,6 @@ if map_data and map_data.get("bounds"):
                 st.session_state.status_text = f"找到了 {len(lots)} 個停車場！"
                 st.rerun()
             except Exception as e:
-                st.session_state.status_text = "網路異常，抓取停車場失敗。"
+                # 如果因為網路不穩或 API 限流而報錯，我們選擇「靜默失敗」(不顯示紅色文字)
+                # 這樣就不會打擾到使用者拖曳地圖的體驗
+                pass
