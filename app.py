@@ -84,7 +84,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 # 建立 Folium 地圖物件
 m = folium.Map(location=st.session_state.map_center, zoom_start=st.session_state.map_zoom)
-LocateControl().addTo(m) # 加入 GPS 定位按鈕
+LocateControl().add_to(m) # 加入 GPS 定位按鈕
 
 # 將 Session State 裡面的停車場資料畫到地圖上
 for lot in st.session_state.parking_lots:
