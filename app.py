@@ -73,19 +73,61 @@ st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 20px;'>
 
 # --- 搜尋邏輯 ---
 def fetch_search_results(query):
+    data = []
     try:
+        # 1. 嘗試使用 Nominatim API (加上完整的 Header 避免被阻擋)
+        headers = {
+            'User-Agent': 'JapanParkingFinderApp/1.0 (hello@example.com)',
+            'Accept-Language': 'zh-TW,zh;q=0.9,ja;q=0.8'
+        }
         url = f"https://nominatim.openstreetmap.org/search?format=json&q={urllib.parse.quote(query)}&countrycodes=jp"
-        response = requests.get(url, headers={'User-Agent': 'JapanParkingFinder/1.0'})
+        response = requests.get(url, headers=headers, timeout=5)
+        response.raise_for_status() # 檢查是否為 200 OK
         data = response.json()
-        if data:
-            st.session_state.search_results = data
-            st.session_state.status_text = f"找到 {len(data)} 個相符的地點，請選擇正確的目的地。"
-        else:
-            st.session_state.search_results = []
-            st.session_state.status_text = "找不到這個地點，請試試看其他關鍵字。"
     except Exception as e:
+        # 2. 如果 Nominatim 失敗 (例如雲端 IP 被封鎖)，自動切換到 Photon API 備用方案
+        try:
+            photon_url = f"https://photon.komoot.io/api/?q={urllib.parse.quote(query)}&limit=10"
+            p_res = requests.get(photon_url, timeout=5)
+            p_res.raise_for_status()
+            p_data = p_res.json()
+            for f in p_data.get('features', []):
+                coords = f['geometry']['coordinates']
+                props = f['properties']
+                # 簡單過濾，確保是日本的地點
+                if props.get('countrycode', '').upper() != 'JP' and '日本' not in props.get('country', ''):
+                    continue
+                name = props.get('name', '未知地點')
+                state = props.get('state', '')
+                city = props.get('city', '')
+                district = props.get('district', '')
+                display_name = f"{name} ({state} {city} {district})".strip()
+                data.append({
+                    'lat': str(coords[1]),
+                    'lon': str(coords[0]),
+                    'display_name': display_name,
+                    'name': name
+                })
+        except Exception as e2:
+            st.session_state.search_results = []
+            st.session_state.status_text = "網路異常或伺服器忙碌中，請稍後再試。"
+            return
+
+    if data:
+        # 過濾掉同名的選項，避免 Streamlit 下拉選單因為重複選項而報錯
+        unique_data = []
+        seen_names = set()
+        for item in data:
+            d_name = item.get('display_name', '')
+            if d_name not in seen_names:
+                seen_names.add(d_name)
+                unique_data.append(item)
+
+        st.session_state.search_results = unique_data
+        st.session_state.status_text = f"找到 {len(unique_data)} 個相符的地點，請在下方清單選擇正確的目的地。"
+    else:
         st.session_state.search_results = []
-        st.session_state.status_text = "搜尋失敗，請確認網路連線。"
+        st.session_state.status_text = "找不到這個地點，請試試看其他關鍵字。"
 
 def fetch_parking_around(lat, lon):
     # 呼叫 Overpass API 尋找方圓 1 公里的停車場
