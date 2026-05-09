@@ -74,29 +74,28 @@ st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 20px;'>
 # --- 搜尋邏輯 ---
 def fetch_search_results(query):
     data = []
+    error_msgs = []
     try:
-        # 1. 嘗試使用 Nominatim API (加上完整的 Header 避免被阻擋)
+        # 1. 嘗試使用 Nominatim API (加上完整的 Header 避免被阻擋，務必填寫看起來真實的 email)
         headers = {
-            'User-Agent': 'JapanParkingFinderApp/1.0 (hello@example.com)',
+            'User-Agent': 'JapanParkingFinderApp/1.1 (mark.parking.app@proton.me)',
             'Accept-Language': 'zh-TW,zh;q=0.9,ja;q=0.8'
         }
-        url = f"https://nominatim.openstreetmap.org/search?format=json&q={urllib.parse.quote(query)}&countrycodes=jp"
-        response = requests.get(url, headers=headers, timeout=5)
+        url = f"https://nominatim.openstreetmap.org/search?format=json&q={urllib.parse.quote(query)}"
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status() # 檢查是否為 200 OK
         data = response.json()
     except Exception as e:
+        error_msgs.append(f"Nominatim: {str(e)}")
         # 2. 如果 Nominatim 失敗 (例如雲端 IP 被封鎖)，自動切換到 Photon API 備用方案
         try:
             photon_url = f"https://photon.komoot.io/api/?q={urllib.parse.quote(query)}&limit=10"
-            p_res = requests.get(photon_url, timeout=5)
+            p_res = requests.get(photon_url, timeout=10)
             p_res.raise_for_status()
             p_data = p_res.json()
             for f in p_data.get('features', []):
                 coords = f['geometry']['coordinates']
                 props = f['properties']
-                # 簡單過濾，確保是日本的地點
-                if props.get('countrycode', '').upper() != 'JP' and '日本' not in props.get('country', ''):
-                    continue
                 name = props.get('name', '未知地點')
                 state = props.get('state', '')
                 city = props.get('city', '')
@@ -109,8 +108,9 @@ def fetch_search_results(query):
                     'name': name
                 })
         except Exception as e2:
+            error_msgs.append(f"Photon: {str(e2)}")
             st.session_state.search_results = []
-            st.session_state.status_text = "網路異常或伺服器忙碌中，請稍後再試。"
+            st.session_state.status_text = f"伺服器忙碌中，請稍後再試。錯誤代碼: {' | '.join(error_msgs)}"
             return
 
     if data:
